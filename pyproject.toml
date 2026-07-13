@@ -9,7 +9,7 @@ description = "A benchmark dataset generator for nonlinear dynamical systems (Lo
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
-authors = [{name = "Your Name"}]
+authors = [{name = "CS Hari Krishna"}]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
