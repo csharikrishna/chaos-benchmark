@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+*.csv
+!chaos_benchmark_dataset_demo.csv
+.venv/
+venv/
