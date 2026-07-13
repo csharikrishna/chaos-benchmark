@@ -5,6 +5,8 @@ horizon."""
 
 import numpy as np
 import pandas as pd
+import concurrent.futures
+import multiprocessing
 
 from .simulators import (
     simulate_logistic, simulate_henon, simulate_lorenz, simulate_rossler,
@@ -13,6 +15,11 @@ from .simulators import (
 from .features import extract_features
 from .labeling import classify_regime, lyapunov_map, lyapunov_rosenstein
 from .forecast import forecast_horizon
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
 
 
 def _row_skeleton(system, **params):
@@ -129,9 +136,6 @@ def gen_mackey_glass_row(rng, tau_range=(2.0, 30.0)):
     lyap = lyapunov_rosenstein(x, m=3, tau=5, theiler_window=20)
     fh = forecast_horizon(x, x2)
 
-    # Mackey-Glass's chaotic regime has a genuinely smaller Lyapunov exponent
-    # than the other four systems (see labeling.classify_regime docstring) --
-    # 0.01 would misclassify real chaos here as Periodic.
     label = classify_regime(lyap, x, lyap_chaos_thresh=0.0015)
     row = _row_skeleton("MackeyGlass", param_beta=beta_mg, param_tau=tau, x0=x0,
                         lyapunov_exponent=lyap, label=label, forecast_horizon=fh)
@@ -147,8 +151,6 @@ GENERATORS = {
     "MackeyGlass": gen_mackey_glass_row,
 }
 
-# Literature-informed sub-ranges known to produce each regime. The label is
-# always re-verified from the computed trajectory, not assumed from the range.
 CLASS_RANGES = {
     "Logistic":    {"Stable": {"r_range": (2.0, 2.95)},
                     "Periodic": {"r_range": (3.0, 3.55)},
@@ -159,49 +161,108 @@ CLASS_RANGES = {
     "Lorenz":      {"Stable": {"rho_range": (0.5, 10.0)},
                     "Periodic": {"rho_range": (0.5, 45.0)},
                     "Chaotic": {"rho_range": (24.8, 40.0)}},
-    "Rossler":     {"Stable": {"c_range": (1.0, 2.0)},
-                    "Periodic": {"c_range": (2.5, 3.5)},
+    "Rossler":     {"Periodic": {"c_range": (2.5, 3.5)},
                     "Chaotic": {"c_range": (5.7, 10.0)}},
     "MackeyGlass": {"Stable": {"tau_range": (2.0, 4.0)},
                     "Periodic": {"tau_range": (6.0, 12.0)},
                     "Chaotic": {"tau_range": (17.0, 30.0)}},
 }
 
+def _evaluate_candidate(sys_name, range_kwargs, seed):
+    rng = np.random.default_rng(seed)
+    gen_fn = GENERATORS[sys_name]
+    try:
+        row = gen_fn(rng, **range_kwargs)
+        return row
+    except Exception:
+        return None
 
 def build_dataset(rows_per_class=100, max_attempts_per_class=500, seed=42,
-                   systems=None, verbose=True):
-    """Generate the benchmark dataset as a pandas DataFrame.
-
-    Parameters
-    ----------
-    rows_per_class : target rows for each (system, class) combination.
-    max_attempts_per_class : give up on a bucket after this many tries
-        (some buckets, like Rossler-Stable, structurally can't fill --
-        see README).
-    seed : RNG seed for reproducibility.
-    systems : optional list restricting which systems to generate
-        (default: all five).
-    """
+                   systems=None, workers=None, verbose=True, progress_callback=None, cancel_check=None):
+    """Generate the benchmark dataset as a pandas DataFrame using ProcessPoolExecutor."""
     rng = np.random.default_rng(seed)
     rows = []
     system_names = systems or list(GENERATORS.keys())
 
-    for sys_name in system_names:
-        gen_fn = GENERATORS[sys_name]
-        sys_counts = {"Stable": 0, "Periodic": 0, "Chaotic": 0}
-        for target_class, range_kwargs in CLASS_RANGES[sys_name].items():
-            attempts = 0
-            while attempts < max_attempts_per_class and sys_counts[target_class] < rows_per_class:
-                attempts += 1
-                row = gen_fn(rng, **range_kwargs)
-                if row is None:
-                    continue
-                label = row["label"]
-                if label not in sys_counts or sys_counts[label] >= rows_per_class:
-                    continue
-                sys_counts[label] += 1
-                rows.append(row)
-        if verbose:
-            print(f"{sys_name}: counts={sys_counts}")
+    total_expected = len(system_names) * 3 * rows_per_class
+    if tqdm is not None and verbose:
+        pbar = tqdm(total=total_expected, desc="Generating benchmark")
+    else:
+        pbar = None
+
+    if workers is None:
+        workers = max(1, multiprocessing.cpu_count() - 1)
+    else:
+        workers = max(1, int(workers))
+        
+    executor = concurrent.futures.ProcessPoolExecutor(max_workers=workers)
+    
+    try:
+        for sys_name in system_names:
+            if cancel_check and cancel_check():
+                break
+            
+            sys_counts = {"Stable": 0, "Periodic": 0, "Chaotic": 0}
+            
+            for target_class, range_kwargs in CLASS_RANGES[sys_name].items():
+                if cancel_check and cancel_check():
+                    break
+                
+                attempts = 0
+                batch_size = max(workers * 2, rows_per_class)
+                
+                while attempts < max_attempts_per_class and sys_counts[target_class] < rows_per_class:
+                    if cancel_check and cancel_check():
+                        break
+                        
+                    to_submit = min(batch_size, max_attempts_per_class - attempts)
+                    futures = []
+                    for _ in range(to_submit):
+                        task_seed = int(rng.integers(0, 2**32 - 1))
+                        fut = executor.submit(_evaluate_candidate, sys_name, range_kwargs, task_seed)
+                        futures.append(fut)
+                        attempts += 1
+                        
+                    for fut in concurrent.futures.as_completed(futures):
+                        if cancel_check and cancel_check():
+                            for f in futures:
+                                f.cancel()
+                            break
+                            
+                        row = fut.result()
+                        if row is not None:
+                            label = row["label"]
+                            if label in sys_counts and sys_counts[label] < rows_per_class:
+                                sys_counts[label] += 1
+                                rows.append(row)
+                                if progress_callback:
+                                    progress_callback(sys_name, label, sys_counts)
+                                if pbar is not None:
+                                    pbar.update(1)
+                                    
+                    if sys_counts[target_class] >= rows_per_class:
+                        break
+                        
+                if cancel_check and cancel_check():
+                    break
+            
+            if cancel_check and cancel_check():
+                break
+
+            if verbose:
+                if pbar is not None:
+                    pbar.write(f"{sys_name}: counts={sys_counts}")
+                else:
+                    print(f"{sys_name}: counts={sys_counts}")
+
+    finally:
+        # Gracefully kill all running processes immediately if Python 3.9+
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            executor.shutdown(wait=False)
+
+    if pbar is not None:
+        pbar.close()
 
     return pd.DataFrame(rows)

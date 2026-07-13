@@ -14,6 +14,9 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "pandas>=2.0",
+    "tqdm>=4.65",
+    "Flask>=3.0",
+    "numba>=0.56.0",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +24,7 @@ dev = ["pytest>=7.0"]
 
 [project.scripts]
 chaos-benchmark-generate = "chaos_benchmark.cli:main"
+chaos-benchmark-web = "chaos_benchmark.web.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

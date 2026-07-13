@@ -2,8 +2,10 @@
 
 import numpy as np
 from scipy.integrate import solve_ivp
+from numba import njit
 
 
+@njit(fastmath=True)
 def simulate_logistic(r, x0, n_steps=500, discard=100):
     """Logistic map: x_{n+1} = r * x_n * (1 - x_n). Models bounded population growth."""
     x = np.empty(n_steps)
@@ -13,6 +15,7 @@ def simulate_logistic(r, x0, n_steps=500, discard=100):
     return x[discard:]
 
 
+@njit(fastmath=True)
 def simulate_henon(a, b, x0, y0, n_steps=500, discard=100):
     """Henon map, a cheap 2-D stand-in for Lorenz-style chaotic attractors."""
     x = np.empty(n_steps)
@@ -75,6 +78,7 @@ def simulate_rossler(a, b, c, x0, y0, z0, t_span=(0, 100), n_points=500,
     return sol.y[0][d:]
 
 
+@njit(fastmath=True)
 def simulate_mackey_glass(beta, gamma, n_exp, tau, x0, n_steps=1500, dt=0.1,
                            discard=500):
     """Mackey-Glass delay differential equation, modeling physiological feedback

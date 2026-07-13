@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chaos Benchmark Generator</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+    
+    <!-- MathJax -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <header class="hero">
+        <canvas id="lorenz-canvas"></canvas>
+        <div class="hero-content">
+            <h1>Chaos Benchmark</h1>
+            <p class="subtitle">A rigorous dataset generator for nonlinear dynamical systems.</p>
+        </div>
+    </header>
+
+    <main class="container">
+        
+        <section class="generator">
+            <h2>I. Generator Configuration</h2>
+            
+            <form id="generate-form">
+                <div class="config-grid">
+                    
+                    <div class="config-systems">
+                        <h3>Target Systems</h3>
+                        <div class="checkbox-list">
+                            <label class="check-wrap"><input type="checkbox" name="systems" value="Logistic" checked> <span class="box"></span> Logistic Map</label>
+                            <label class="check-wrap"><input type="checkbox" name="systems" value="Henon" checked> <span class="box"></span> Hénon Map</label>
+                            <label class="check-wrap"><input type="checkbox" name="systems" value="Lorenz" checked> <span class="box"></span> Lorenz System</label>
+                            
+                            <!-- Contextual Rössler -->
+                            <div class="contextual-group">
+                                <label class="check-wrap"><input type="checkbox" name="systems" value="Rossler" id="check-rossler" checked> <span class="box"></span> Rössler System</label>
+                                <div class="context-note" id="note-rossler">
+                                    <em>Note: Rössler's Stable regime never appears in the output because the fixed point decays too slowly to register within the simulation window.</em>
+                                </div>
+                            </div>
+                            
+                            <label class="check-wrap"><input type="checkbox" name="systems" value="MackeyGlass" checked> <span class="box"></span> Mackey-Glass</label>
+                        </div>
+                    </div>
+
+                    <div class="config-params">
+                        <h3>Parameters</h3>
+                        <div class="form-group">
+                            <label for="rows_per_class">Rows per Class</label>
+                            <p class="helper">Target number of successfully labeled trajectories for each system and regime (Stable, Periodic, Chaotic).</p>
+                            <input type="number" id="rows_per_class" value="20" min="1" max="1000">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="max_attempts">Max Attempts per Class</label>
+                            <p class="helper">Failsafe limit to prevent infinite loops if a specific behavior is very rare.</p>
+                            <input type="number" id="max_attempts" name="max_attempts" value="100" min="10" max="1000">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="workers">CPU Cores (Threads)</label>
+                            <p class="helper">Number of parallel background processes. Lower this if your computer is lagging.</p>
+                            <input type="number" id="workers" name="workers" value="{{ cpu_count - 1 if cpu_count > 1 else 1 }}" min="1" max="{{ cpu_count }}">
+                        </div>
+
+                        <button type="submit" id="submit-btn" class="primary-btn">Begin Simulation</button>
+                    </div>
+
+                </div>
+            </form>
+
+            <div id="results-container" class="hidden">
+                <div class="results-header">
+                    <h3>Simulation Progress <span id="progress-text" style="font-size: 0.9em; color: var(--text-muted); margin-left: 0.5rem;"></span></h3>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <button type="button" class="btn btn-secondary hidden" id="terminate-btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Terminate</button>
+                        <div class="spinner" id="loading-spinner"></div>
+                    </div>
+                </div>
+                <div class="progress-wrapper">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <table class="data-table" id="progress-table">
+                    <thead>
+                        <tr>
+                            <th>System</th>
+                            <th class="state-stable">Stable</th>
+                            <th class="state-periodic">Periodic</th>
+                            <th class="state-chaotic">Chaotic</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+                
+                <div id="completion-view" class="hidden">
+                    <h3 class="success-text">Simulation Complete</h3>
+                    <p class="helper">Dataset preview (first 3 rows):</p>
+                    <div class="table-scroll">
+                        <table class="data-table" id="preview-table">
+                            <thead>
+                                <tr id="preview-head"></tr>
+                            </thead>
+                            <tbody id="preview-body"></tbody>
+                        </table>
+                    </div>
+                    <button id="download-btn" class="primary-btn mt-2">Download Dataset CSV</button>
+                </div>
+            </div>
+
+        </section>
+
+        <hr>
+        
+        <section class="scientific-context">
+            <h2>II. Dynamical Systems</h2>
+            <p class="intro-text">This tool simulates trajectories from five canonical chaotic systems. Labels (Stable, Periodic, Chaotic) are derived objectively via real-time calculation of the maximal Lyapunov exponent.</p>
+            
+            <div class="systems-grid">
+                <article class="sys-item">
+                    <h3>Logistic Map</h3>
+                    <div class="equation-wrapper">
+                        <canvas id="canvas-logistic" class="sys-canvas"></canvas>
+                        <div class="equation">$$x_{n+1} = r x_n (1 - x_n)$$</div>
+                    </div>
+                    <p>A classic demographic model of bounded population growth. Chaos arises via a period-doubling cascade as the parameter \(r\) increases, leading to dense orbits.</p>
+                </article>
+
+                <article class="sys-item">
+                    <h3>Hénon Map</h3>
+                    <div class="equation-wrapper">
+                        <canvas id="canvas-henon" class="sys-canvas"></canvas>
+                        <div class="equation">
+                            \begin{align*} x_{n+1} &= 1 - a x_n^2 + y_n \\ y_{n+1} &= b x_n \end{align*}
+                        </div>
+                    </div>
+                    <p>A two-dimensional discrete-time dynamical system that maps a plane into itself. Famous for exhibiting a strange attractor with a beautiful fractal structure.</p>
+                </article>
+
+                <article class="sys-item">
+                    <h3>Lorenz System</h3>
+                    <div class="equation-wrapper">
+                        <canvas id="canvas-lorenz" class="sys-canvas"></canvas>
+                        <div class="equation">
+                            \begin{align*} \frac{dx}{dt} &= \sigma(y-x) \\ \frac{dy}{dt} &= x(\rho-z)-y \\ \frac{dz}{dt} &= xy - \beta z \end{align*}
+                        </div>
+                    </div>
+                    <p>Originally formulated to model atmospheric convection rolls. The system is chaotic due to the stretching and folding of phase space around two repelling fixed points (the "butterfly").</p>
+                </article>
+
+                <article class="sys-item">
+                    <h3>Rössler System</h3>
+                    <div class="equation-wrapper">
+                        <canvas id="canvas-rossler" class="sys-canvas"></canvas>
+                        <div class="equation">
+                            \begin{align*} \frac{dx}{dt} &= -y-z \\ \frac{dy}{dt} &= x+ay \\ \frac{dz}{dt} &= b+z(x-c) \end{align*}
+                        </div>
+                    </div>
+                    <p>Designed by Otto Rössler to be the simplest possible continuous-time chaotic system, featuring only a single nonlinear term (\(zx\)).</p>
+                </article>
+
+                <article class="sys-item">
+                    <h3>Mackey-Glass</h3>
+                    <div class="equation-wrapper">
+                        <canvas id="canvas-mg" class="sys-canvas"></canvas>
+                        <div class="equation">$$ \frac{dx}{dt} = \frac{\beta x(t-\tau)}{1+x(t-\tau)^n} - \gamma x $$</div>
+                    </div>
+                    <p>A time-delay differential equation modeling the physiological control of blood cell production. The time delay \(\tau\) technically creates an infinite-dimensional phase space.</p>
+                </article>
+            </div>
+        </section>
+
+        <hr>
+
+        <section class="limitations-glossary">
+            <div class="limitations">
+                <h2>III. Known Limitations</h2>
+                <ul class="limit-list">
+                    <li><strong>Rössler Stable Regime:</strong> The Stable bucket (\(c \in [1.0, 2.0]\)) will never produce successful rows. The mathematical fixed point is real, but it decays too slowly to register as fully settled within our finite simulation window.</li>
+                    <li><strong>Lorenz Periodic Regime:</strong> The Periodic hit rate is exceedingly low (~85% failure rate). Periodic windows in the Lorenz system are incredibly narrow in parameter space. High <code>max_attempts</code> is recommended if this class is required.</li>
+                </ul>
+            </div>
+            
+            <div class="glossary">
+                <h2>IV. Feature Extraction Glossary</h2>
+                <p class="intro-text">For every generated trajectory, 13 scalar features are extracted to form the dataset:</p>
+                <div class="glossary-grid">
+                    <div><strong>mean, variance</strong>: Standard central tendency and dispersion.</div>
+                    <div><strong>skewness, kurtosis</strong>: Symmetry and tail-heaviness of the trajectory distribution.</div>
+                    <div><strong>lyapunov</strong>: Maximal Lyapunov exponent. Positive values strictly indicate chaos.</div>
+                    <div><strong>entropy</strong>: Shannon entropy of the binned trajectory values.</div>
+                    <div><strong>hurst</strong>: Hurst exponent, measuring long-term memory/autocorrelation.</div>
+                    <div><strong>corr_dim</strong>: Correlation dimension, a measure of fractal dimensionality.</div>
+                    <div><strong>lz_complexity</strong>: Lempel-Ziv complexity of the binarized signal.</div>
+                    <div><strong>num_peaks</strong>: Count of local maxima in the trajectory.</div>
+                    <div><strong>dom_freq</strong>: The dominant frequency extracted via FFT.</div>
+                    <div><strong>spectral_entropy</strong>: Entropy of the power spectrum (flatness).</div>
+                    <div><strong>bandpower</strong>: Total power in the signal spectrum.</div>
+                </div>
+            </div>
+        </section>
+        
+        <footer>
+            <p>Chaos Benchmark &copy; 2026. A tool for nonlinear dynamics dataset generation.</p>
+        </footer>
+
+    </main>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

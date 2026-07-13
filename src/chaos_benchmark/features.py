@@ -2,6 +2,11 @@
 
 import numpy as np
 from scipy import stats, signal
+import warnings
+
+# Suppress precision loss and divide by zero warnings from SciPy/NumPy 
+# on perfectly stable fixed-point trajectories
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 
 def _shannon_entropy(x, bins=20):
@@ -10,6 +15,8 @@ def _shannon_entropy(x, bins=20):
     hist, _ = np.histogram(x, bins=bins, density=False)
     p = hist / hist.sum()
     p = p[p > 0]
+    if len(p) <= 1:
+        return 0.0
     return float(-np.sum(p * np.log2(p)))
 
 
@@ -43,6 +50,8 @@ def _spectral_entropy(x):
         return 0.0
     p = psd / psd.sum()
     p = p[p > 0]
+    if len(p) <= 1:
+        return 0.0
     return float(-np.sum(p * np.log2(p)) / np.log2(len(p)))
 
 
@@ -61,7 +70,7 @@ def _fft_energy(x):
 
 def _autocorr_lag1(x):
     x = np.asarray(x)
-    if np.std(x) == 0:
+    if np.std(x[:-1]) < 1e-10 or np.std(x[1:]) < 1e-10:
         return 0.0
     return float(np.corrcoef(x[:-1], x[1:])[0, 1])
 
@@ -110,8 +119,10 @@ def _hurst_exponent(x):
             if s > 0:
                 rs_list.append(r / s)
         if rs_list:
-            rs_vals.append(np.mean(rs_list))
-            valid_lags.append(lag)
+            rs_mean = np.mean(rs_list)
+            if rs_mean > 0:
+                rs_vals.append(rs_mean)
+                valid_lags.append(lag)
     if len(valid_lags) < 2:
         return 0.5
     slope, _ = np.polyfit(np.log(valid_lags), np.log(rs_vals), 1)
@@ -121,12 +132,13 @@ def _hurst_exponent(x):
 def extract_features(x):
     """Return a dict of 13 features summarizing a 1-D trajectory."""
     x = np.asarray(x, dtype=float)
+    var = float(np.var(x))
     return {
         "mean": float(np.mean(x)),
-        "variance": float(np.var(x)),
+        "variance": var,
         "std": float(np.std(x)),
-        "skewness": float(stats.skew(x)),
-        "kurtosis": float(stats.kurtosis(x)),
+        "skewness": float(stats.skew(x)) if var > 1e-10 else 0.0,
+        "kurtosis": float(stats.kurtosis(x)) if var > 1e-10 else 0.0,
         "shannon_entropy": _shannon_entropy(x),
         "sample_entropy": _sample_entropy(x),
         "spectral_entropy": _spectral_entropy(x),

@@ -1,0 +1,2 @@
+recursive-include src/chaos_benchmark/web/templates *
+recursive-include src/chaos_benchmark/web/static *

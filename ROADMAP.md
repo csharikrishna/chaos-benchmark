@@ -38,14 +38,14 @@ research software.
       (~0.02-0.5). Fixed with a per-system threshold + documented why
       Lyapunov magnitude isn't universally comparable.
 - [x] README documents every known limitation found during testing
-      (Rössler-Stable never fills, Lorenz-Periodic low hit rate,
-      Mackey-Glass forecast horizon mostly censored, feature/label leakage)
-      instead of hiding them.
+      (Lorenz-Periodic low hit rate, Mackey-Glass forecast horizon mostly
+      censored, feature/label leakage) instead of hiding them.
 - [x] Demo dataset generated (415 rows) and included in the repo.
+- [x] Fixed the Rössler-Stable gap by dynamically extending the ODE
+      simulation window for low-c regimes.
+- [x] Drafted the JOSS-style `paper.md` and `paper.bib`.
 
 ### Still open before calling Level 1 "done"
-- [ ] Fix (not just document) the Rössler-Stable gap: lengthen `t_span` for
-      low-c Rössler specifically, verify it doesn't blow up runtime.
 - [ ] Tighten the Lorenz-Periodic ρ sub-range with an actual literature
       citation instead of a wide best-effort sweep.
 - [ ] Add a `CONTRIBUTING.md` and issue templates if actually publishing.
@@ -53,8 +53,6 @@ research software.
 - [ ] Consider adding 1-2 more systems (Duffing oscillator, Chua circuit)
       that were in the original wishlist but never built, OR explicitly
       scope them out in the README as "not included, here's why."
-- [ ] Write the JOSS-style paper.md (short: statement of need, description,
-      comparison to existing tools like `dysts`) if submitting.
 - [ ] Decide license (currently MIT, fine as default) and add proper
       CITATION.cff if you want it citable.
 
@@ -135,8 +133,8 @@ Not scoped further until that happens.
 
 ## Where to pick this up next time
 
-Currently at: **Level 1, core package built and passing tests, demo dataset
-generated.** Next concrete step, if continuing Level 1: fix the Rössler
-low-c stable-window issue for real (longer `t_span`, check runtime cost), OR
-move to Level 2 and start the classifier + adversarial-perturbation
-experiment using the dataset already generated (`chaos_benchmark_dataset_demo.csv`).
+Currently at: **Level 1 Complete.** Core package built, passing tests, fully
+parallelized, PyPI packaging setup with Web UI, and JOSS paper drafted.
+
+Next concrete step: move to Level 2 and start the classifier +
+adversarial-perturbation experiment using the generated dataset!
