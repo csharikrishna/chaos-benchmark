@@ -1,5 +1,7 @@
 # chaos-benchmark
 
+[![PyPI version](https://badge.fury.io/py/chaos-benchmark.svg)](https://pypi.org/project/chaos-benchmark/)
+
 A small, honest benchmark-dataset generator for nonlinear dynamical systems:
 **Logistic map, Hénon map, Lorenz system, Rössler system, Mackey-Glass equation.**
 
@@ -23,8 +25,18 @@ The repository is organized following modern Python standards:
 
 ## Install
 
+The easiest way to install the tool is directly from PyPI:
+
 ```bash
-git clone <this-repo>
+pip install chaos-benchmark
+```
+
+### Local Development
+
+If you want to edit the code or use the Web UI from source:
+
+```bash
+git clone https://github.com/csharikrishna/chaos-benchmark.git
 cd chaos-benchmark
 pip install -e .
 ```
