@@ -7,7 +7,7 @@ tags:
   - machine learning
   - benchmark
 authors:
-  - name: Your Name
+  - name: CS Hari Krishna
     orcid: 0000-0000-0000-0000
     affiliation: 1
 affiliations:
